@@ -51,7 +51,6 @@ class StatsCollector: ObservableObject {
 
     private var isRunning = false
     var onUpdate: ((SystemStats) -> Void)?
-    private var isSensorsEnabled = false
 
     private init() {
         setupSettingsObserver()
@@ -85,6 +84,7 @@ class StatsCollector: ObservableObject {
         let enabledTypes = Set(enabledItems.map { $0.type })
 
         // Always collect all stats for popover (popover shows all panels)
+        // Note: Temperature/Fan always collected to avoid 0-values on first popover open
         let stats = SystemStats(
             cpu: cpuMonitor.getStats(),
             memory: memoryMonitor.getStats(),
@@ -92,8 +92,8 @@ class StatsCollector: ObservableObject {
             network: networkMonitor.getStats(),
             gpu: gpuMonitor.getStats(),
             battery: batteryMonitor.getStats(),
-            temperature: isSensorsEnabled ? temperatureMonitor.getStats() : nil,
-            fan: isSensorsEnabled ? fanMonitor.getStats() : nil
+            temperature: temperatureMonitor.getStats(),
+            fan: fanMonitor.getStats()
         )
 
         // Only update history buffers for menu bar enabled items (optimization)
@@ -211,12 +211,4 @@ class StatsCollector: ObservableObject {
         }
     }
 
-    func setSensorsEnabled(_ enabled: Bool) {
-        isSensorsEnabled = enabled
-        // Trigger immediate update when enabling sensors (popover opened)
-        // This ensures temp/fan data is available right away instead of waiting for next 1s interval
-        if enabled {
-            updateStats()
-        }
-    }
 }

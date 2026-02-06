@@ -75,34 +75,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover?.contentSize = NSSize(width: 1212, height: 380)
         popover?.behavior = .transient
         popover?.animates = false
-
-        setupPopoverObservers()
-    }
-
-    private func setupPopoverObservers() {
-        // Monitor popover will show
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(popoverWillShow),
-            name: NSPopover.willShowNotification,
-            object: popover
-        )
-
-        // Monitor popover did close
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(popoverDidClose),
-            name: NSPopover.didCloseNotification,
-            object: popover
-        )
-    }
-
-    @objc private func popoverWillShow(_ notification: Notification) {
-        statsCollector.setSensorsEnabled(true)
-    }
-
-    @objc private func popoverDidClose(_ notification: Notification) {
-        statsCollector.setSensorsEnabled(false)
     }
 
     @objc func togglePopover() {
@@ -741,9 +713,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return "0KB/s"
     }
-}
-
-// MARK: - NSPopover Notifications
-extension NSPopover {
-    static let willShowNotification = NSNotification.Name("NSPopoverWillShowNotification")
 }
