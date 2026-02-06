@@ -8,7 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let menuBarSettings = MenuBarSettings.shared
 
     // Cached fonts and attributes for menu bar rendering
-    private let labelFont = NSFont.systemFont(ofSize: 10, weight: .medium)
+    private let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
     private let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     // Blink state for low battery warning (< 30%)
@@ -130,11 +130,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func createMenuBarImage(stats: SystemStats, configs: [MenuBarItemConfig]) -> NSImage {
         let itemHeight: CGFloat = 24
-        let barWidth: CGFloat = 34
+        let barWidth: CGFloat = 30
         let barHeight: CGFloat = 7
-        let spacing: CGFloat = 10  // Comfortable spacing between items
-        let leftPadding: CGFloat = 6
-        let rightPadding: CGFloat = 6
+        let spacing: CGFloat = 5  // Comfortable spacing between items
+        let leftPadding: CGFloat = 4
+        let rightPadding: CGFloat = 4
 
         // Calculate total width
         var totalWidth: CGFloat = leftPadding + rightPadding
@@ -144,33 +144,72 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             switch config.type {
             case .cpu, .memory, .disk, .gpu:
                 if config.style == .iconWithText {
-                    totalWidth += 44 + trailingSpacing
+                    // Calculate percentage text for dynamic width
+                    let percentage: Double
+                    switch config.type {
+                    case .cpu: percentage = stats.cpu.totalUsage
+                    case .memory: percentage = stats.memory.usagePercentage
+                    case .disk: percentage = stats.disk.usagePercentage
+                    case .gpu: percentage = stats.gpu?.usage ?? 0
+                    default: percentage = 0
+                    }
+                    let text = "\(Int(percentage))%"
+                    totalWidth += calculateIconWithTextWidth(text: text) + trailingSpacing
                 } else if config.style == .percentage {
-                    totalWidth += 40 + trailingSpacing
+                    totalWidth += 36 + trailingSpacing
                 } else {
-                    totalWidth += barWidth + trailingSpacing  // Bar with label (vertical)
+                    totalWidth += barWidth + trailingSpacing
                 }
             case .network:
                 if config.style == .iconWithText {
-                    totalWidth += 94 + trailingSpacing  // Icon + speed text (with units like KB/s, MB/s)
+                    // Calculate speed text for dynamic width
+                    let uploadSpeed = stats.network.uploadSpeed
+                    let downloadSpeed = stats.network.downloadSpeed
+                    var speedText = ""
+                    if uploadSpeed > 0 || downloadSpeed > 0 {
+                        if uploadSpeed > 1024 && downloadSpeed > 1024 {
+                            speedText = String(format: "%.1f↑ %.1f↓", uploadSpeed / 1024, downloadSpeed / 1024)
+                        } else if uploadSpeed > 1024 {
+                            speedText = String(format: "%.1f↑", uploadSpeed / 1024)
+                        } else if downloadSpeed > 1024 {
+                            speedText = String(format: "%.1f↓", downloadSpeed / 1024)
+                        } else {
+                            speedText = formatSpeed(uploadSpeed + downloadSpeed)
+                        }
+                    } else {
+                        speedText = "0K"
+                    }
+                    totalWidth += calculateIconWithTextWidth(text: speedText) + trailingSpacing
                 } else if config.style == .indicator {
-                    totalWidth += 14 + trailingSpacing  // Two stacked dots
+                    totalWidth += 14 + trailingSpacing
                 } else {
-                    totalWidth += 76 + trailingSpacing  // Speed text (download + upload stacked vertically with units)
+                    totalWidth += 70 + trailingSpacing
                 }
             case .battery:
                 if config.style == .iconWithText {
-                    totalWidth += 52 + trailingSpacing  // Icon + percentage + AC text
+                    // Calculate battery text for dynamic width
+                    var batteryText = "--%"
+                    if let battery = stats.battery {
+                        var statusSuffix = ""
+                        if battery.isCharging || battery.isPlugged {
+                            statusSuffix = " AC"
+                        }
+                        batteryText = "\(battery.level)%\(statusSuffix)"
+                    }
+                    totalWidth += calculateIconWithTextWidth(text: batteryText) + trailingSpacing
                 } else if config.style == .percentage {
-                    totalWidth += 40 + trailingSpacing  // BATT label + percentage (like CPU)
+                    totalWidth += 36 + trailingSpacing
                 } else {
-                    totalWidth += barWidth + trailingSpacing  // Bar with time estimate label
+                    totalWidth += barWidth + trailingSpacing
                 }
             case .temperature:
                 if config.style == .iconWithText {
-                    totalWidth += 48 + trailingSpacing
+                    // Calculate temp text for dynamic width
+                    let cpuTemp = stats.temperature?.cpu ?? 0
+                    let tempText = cpuTemp > 0 ? "\(Int(cpuTemp))°" : "--°"
+                    totalWidth += calculateIconWithTextWidth(text: tempText) + trailingSpacing
                 } else {
-                    totalWidth += 40 + trailingSpacing  // TEMP label + value (like CPU)
+                    totalWidth += 36 + trailingSpacing
                 }
             }
         }
@@ -212,14 +251,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 if config.style == .iconWithText {
-                    _ = drawIconWithText(
+                    let actualWidth = drawIconWithText(
                         at: xOffset,
                         iconName: config.customIcon,
                         text: "\(Int(itemPercentage))%",
                         color: itemColor,
                         height: itemHeight
                     )
-                    xOffset += 44 + trailingSpacing
+                    xOffset += actualWidth + trailingSpacing
                 } else if config.style == .percentage {
                     drawPercentageText(
                         at: xOffset,
@@ -230,7 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         valueFont: valueFont,
                         height: itemHeight
                     )
-                    xOffset += 40 + trailingSpacing
+                    xOffset += 36 + trailingSpacing
                 } else {
                     drawLabeledBar(
                         at: xOffset,
@@ -265,14 +304,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         speedText = "0K"
                     }
 
-                    _ = drawIconWithText(
+                    let actualWidth = drawIconWithText(
                         at: xOffset,
                         iconName: config.customIcon,
                         text: speedText,
                         color: NSColor.systemGreen,
                         height: itemHeight
                     )
-                    xOffset += 94 + trailingSpacing
+                    xOffset += actualWidth + trailingSpacing
                 } else if config.style == .indicator {
                     // Show two stacked dots: green (download) on top, red (upload) below
                     // No blinking - solid colors when active
@@ -316,7 +355,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // Draw dots first (on the left)
                     let dotSize: CGFloat = 4
                     let dotOffset: CGFloat = 7  // Space for dots + padding
-                    let textAreaWidth: CGFloat = 69  // Remaining width for text (76 - 7)
+                    let textAreaWidth: CGFloat = 63  // Remaining width for text (70 - 7)
 
                     // Calculate text positions
                     let downloadY = itemHeight - 11
@@ -362,7 +401,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let uploadX = xOffset + dotOffset + (textAreaWidth - uploadTextWidth)
                     (uploadText as NSString).draw(at: NSPoint(x: uploadX, y: uploadY), withAttributes: uploadAttr)
 
-                    xOffset += 76 + trailingSpacing
+                    xOffset += 70 + trailingSpacing
                 }
 
             case .battery:
@@ -384,14 +423,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             statusSuffix = " AC"
                         }
                         let batteryText = "\(battery.level)%\(statusSuffix)"
-                        _ = drawIconWithText(
+                        let actualWidth = drawIconWithText(
                             at: xOffset,
                             iconName: config.customIcon,
                             text: batteryText,
                             color: batteryColor,
                             height: itemHeight
                         )
-                        xOffset += 52 + trailingSpacing
+                        xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
                         // BATT label on top, percentage below (like CPU)
                         drawPercentageText(
@@ -403,7 +442,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 40 + trailingSpacing
+                        xOffset += 36 + trailingSpacing
                     } else {
                         // Bar style: time estimate label on top, bar below
                         var timeLabel = ""
@@ -439,14 +478,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     // Battery not available - show placeholder based on style
                     if config.style == .iconWithText {
-                        _ = drawIconWithText(
+                        let actualWidth = drawIconWithText(
                             at: xOffset,
                             iconName: config.customIcon,
                             text: "--%",
                             color: NSColor.secondaryLabelColor,
                             height: itemHeight
                         )
-                        xOffset += 52 + trailingSpacing
+                        xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
                         drawPercentageText(
                             at: xOffset,
@@ -457,7 +496,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 40 + trailingSpacing
+                        xOffset += 36 + trailingSpacing
                     } else {
                         drawLabeledBar(
                             at: xOffset,
@@ -480,14 +519,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 if config.style == .iconWithText {
                     let tempText = hasCpuTemp ? "\(Int(cpuTemp))°" : "--°"
-                    _ = drawIconWithText(
+                    let actualWidth = drawIconWithText(
                         at: xOffset,
                         iconName: config.customIcon,
                         text: tempText,
                         color: tempColor,
                         height: itemHeight
                     )
-                    xOffset += 48 + trailingSpacing
+                    xOffset += actualWidth + trailingSpacing
                 } else {
                     // TEMP label on top, value below (like CPU percentage style)
                     // Draw label at top
@@ -507,20 +546,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let valueY: CGFloat = 2
                     (tempStr as NSString).draw(at: NSPoint(x: xOffset, y: valueY), withAttributes: valueAttr)
 
-                    xOffset += 40 + trailingSpacing
+                    xOffset += 36 + trailingSpacing
                 }
 
             case .gpu:
                 if let gpu = stats.gpu {
                     if config.style == .iconWithText {
-                        _ = drawIconWithText(
+                        let actualWidth = drawIconWithText(
                             at: xOffset,
                             iconName: config.customIcon,
                             text: "\(Int(gpu.usage))%",
                             color: gpuNSColor(gpu.usage),
                             height: itemHeight
                         )
-                        xOffset += 44 + trailingSpacing
+                        xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
                         drawPercentageText(
                             at: xOffset,
@@ -531,7 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 40 + trailingSpacing
+                        xOffset += 36 + trailingSpacing
                     } else {
                         drawLabeledBar(
                             at: xOffset,
@@ -562,7 +601,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     ]
                     let valueY: CGFloat = 2
                     ("--%" as NSString).draw(at: NSPoint(x: xOffset, y: valueY), withAttributes: attr)
-                    xOffset += 40 + trailingSpacing
+                    xOffset += 36 + trailingSpacing
                 }
             }
         }
@@ -573,6 +612,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Drawing Helpers
+
+    // Calculate width for iconWithText style without drawing
+    private func calculateIconWithTextWidth(text: String) -> CGFloat {
+        let iconSize: CGFloat = 10
+        let iconTextSpacing: CGFloat = 5
+
+        let attr: [NSAttributedString.Key: Any] = [
+            .font: valueFont,
+            .foregroundColor: NSColor.labelColor
+        ]
+        let textStr = text as NSString
+        let textSize = textStr.size(withAttributes: attr)
+
+        return iconSize + iconTextSpacing + ceil(textSize.width)
+    }
 
     private func drawLabeledBar(at x: CGFloat, label: String, value: Double, color: NSColor, barWidth: CGFloat, barHeight: CGFloat, labelFont: NSFont, height: CGFloat) {
         // Draw label at top
@@ -617,8 +671,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Draw SF Symbol icon with text (Icon + Text style) - horizontal layout
     private func drawIconWithText(at x: CGFloat, iconName: String, text: String, color: NSColor, height: CGFloat) -> CGFloat {
-        let iconSize: CGFloat = 12
-        let iconTextSpacing: CGFloat = 3
+        let iconSize: CGFloat = 10
+        let iconTextSpacing: CGFloat = 5
 
         // Calculate text width and get proper text dimensions
         let attr: [NSAttributedString.Key: Any] = [
