@@ -80,9 +80,6 @@ class StatsCollector: ObservableObject {
         let startTime = Date()
         #endif
 
-        let enabledItems = menuBarSettings.enabledItems
-        let enabledTypes = Set(enabledItems.map { $0.type })
-
         // Always collect all stats for popover (popover shows all panels)
         // Note: Temperature/Fan always collected to avoid 0-values on first popover open
         let stats = SystemStats(
@@ -96,26 +93,16 @@ class StatsCollector: ObservableObject {
             fan: fanMonitor.getStats()
         )
 
-        // Only update history buffers for menu bar enabled items (optimization)
-        if enabledTypes.contains(.cpu) {
-            updateHistory("cpu", value: stats.cpu.totalUsage)
-        }
+        // Always update history buffers for metrics with graphs (needed by popover)
+        // Only skip history for metrics without graphs (temperature, fan, battery)
+        updateHistory("cpu", value: stats.cpu.totalUsage)
+        updateHistory("memory", value: stats.memory.usagePercentage)
+        updateHistory("disk_read", value: stats.disk.readSpeed)
+        updateHistory("disk_write", value: stats.disk.writeSpeed)
+        updateHistory("network_up", value: stats.network.uploadSpeed)
+        updateHistory("network_down", value: stats.network.downloadSpeed)
 
-        if enabledTypes.contains(.memory) {
-            updateHistory("memory", value: stats.memory.usagePercentage)
-        }
-
-        if enabledTypes.contains(.disk) {
-            updateHistory("disk_read", value: stats.disk.readSpeed)
-            updateHistory("disk_write", value: stats.disk.writeSpeed)
-        }
-
-        if enabledTypes.contains(.network) {
-            updateHistory("network_up", value: stats.network.uploadSpeed)
-            updateHistory("network_down", value: stats.network.downloadSpeed)
-        }
-
-        if enabledTypes.contains(.gpu), let gpu = stats.gpu {
+        if let gpu = stats.gpu {
             updateHistory("gpu", value: gpu.usage)
         }
 
