@@ -203,7 +203,13 @@ class MenuBarSettings: ObservableObject {
     func getEnabledItems() -> [MenuBarItemConfig] {
         return items.filter { $0.enabled }.sorted { $0.order < $1.order }
     }
-    
+
+    func setEnabledItems(_ items: [MenuBarItemConfig]) {
+        self.items = items
+        save()
+        NotificationCenter.default.post(name: .menuBarSettingsChanged, object: self)
+    }
+
     func toggleItem(_ type: MenuBarItemType) {
         if let index = items.firstIndex(where: { $0.type == type }) {
             items[index].enabled.toggle()
@@ -242,4 +248,9 @@ private struct SavedSettings: Codable {
     var items: [MenuBarItemConfig]
     var itemSpacing: CGFloat
     var useColoredIcons: Bool
+}
+
+// MARK: - Notifications
+extension Notification.Name {
+    static let menuBarSettingsChanged = Notification.Name("com.xstats.menuBarSettingsChanged")
 }
