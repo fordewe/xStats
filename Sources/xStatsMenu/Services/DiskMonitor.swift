@@ -7,16 +7,25 @@ class DiskMonitor {
     private var prevWriteBytes: UInt64 = 0
     private var prevTimestamp: CFAbsoluteTime = 0
 
+    // Cache static disk properties
+    private lazy var totalDiskSize: UInt64 = {
+        var stats = statfs()
+        if statfs("/", &stats) == 0 {
+            return UInt64(stats.f_blocks) * UInt64(stats.f_bsize)
+        }
+        return 0
+    }()
+
     func getStats() -> DiskStats {
         var total: UInt64 = 0
         var used: UInt64 = 0
         var free: UInt64 = 0
 
-        // Get root filesystem stats
+        // Get root filesystem stats (use cached total, recalculate used/free)
         var stat = statfs()
         if statfs("/", &stat) == 0 {
+            total = totalDiskSize
             let blockSize = UInt64(stat.f_bsize)
-            total = UInt64(stat.f_blocks) * blockSize
             free = UInt64(stat.f_bavail) * blockSize
             used = total - free
         }

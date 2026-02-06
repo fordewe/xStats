@@ -6,6 +6,34 @@ class NetworkMonitor {
     private var prevDownload: UInt64 = 0
     private var prevTimestamp: CFAbsoluteTime = 0
 
+    // Cache interface list (refresh when network changes)
+    private var cachedInterfaces: [String] = []
+    private var lastInterfaceRefresh: Date = Date()
+
+    private func refreshInterfacesIfNeeded() -> [String] {
+        let now = Date()
+        // Only refresh every 30 seconds or on first call
+        if cachedInterfaces.isEmpty || now.timeIntervalSince(lastInterfaceRefresh) > 30 {
+            var list: UnsafeMutablePointer<ifaddrs>?
+            if getifaddrs(&list) == 0 {
+                var interfaces: [String] = []
+                var iface = list
+                while iface != nil {
+                    let addr = iface!.pointee.ifa_addr.pointee
+                    if addr.sa_family == UInt8(AF_LINK) {
+                        let name = String(cString: iface!.pointee.ifa_name)
+                        interfaces.append(name)
+                    }
+                    iface = iface!.pointee.ifa_next
+                }
+                freeifaddrs(list)
+                cachedInterfaces = interfaces
+                lastInterfaceRefresh = now
+            }
+        }
+        return cachedInterfaces
+    }
+
     func getStats() -> NetworkStats {
         var upload: UInt64 = 0
         var download: UInt64 = 0
