@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 
 APP_NAME="xStats"
 BUNDLE_ID="com.xstats.menu"
-VERSION="1.0.1"
+VERSION="1.0.2"
 BUILD_DIR=".build/arm64-apple-macosx/release"
 APP_BUNDLE="$BUILD_DIR/${APP_NAME}.app"
 DMG_NAME="xStats-${VERSION}.dmg"
@@ -31,14 +31,14 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy executable
-cp "$BUILD_DIR/xStatsMenu" "$APP_BUNDLE/Contents/MacOS/"
+cp "$BUILD_DIR/xStats" "$APP_BUNDLE/Contents/MacOS/"
 
 # Copy Info.plist
 cp "Sources/xStatsMenu/Resources/Info.plist" "$APP_BUNDLE/Contents/"
 
 # Copy AppIcon.icns (from build bundle or source)
-if [ -f "$BUILD_DIR/xStatsMenu_xStatsMenu.bundle/AppIcon.icns" ]; then
-    cp "$BUILD_DIR/xStatsMenu_xStatsMenu.bundle/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
+if [ -f "$BUILD_DIR/xStats_xStats.bundle/AppIcon.icns" ]; then
+    cp "$BUILD_DIR/xStats_xStats.bundle/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 elif [ -f "Sources/xStatsMenu/Resources/AppIcon.icns" ]; then
     cp "Sources/xStatsMenu/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 fi
@@ -47,7 +47,7 @@ fi
 cp -R "Sources/xStatsMenu/Resources/Assets.xcassets" "$APP_BUNDLE/Contents/Resources/"
 
 # Set executable permissions
-chmod +x "$APP_BUNDLE/Contents/MacOS/xStatsMenu"
+chmod +x "$APP_BUNDLE/Contents/MacOS/xStats"
 
 echo "✅ App bundle created at: $APP_BUNDLE"
 
