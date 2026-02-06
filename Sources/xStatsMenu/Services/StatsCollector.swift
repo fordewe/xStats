@@ -17,20 +17,31 @@ class StatsCollector: ObservableObject {
     private let fanMonitor = FanMonitor()
     private let gpuMonitor = GPUMonitor()
 
-    // History buffers (60 samples = 60 seconds at 1s interval)
-    private let cpuHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let memoryHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let networkUpHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let networkDownHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let diskReadHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let diskWriteHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
-    private let gpuHistory = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
+    // Dynamic history buffers (only allocate for enabled metrics)
+    private var historyBuffers: [String: HistoryBuffer<Double>] = [:]
+    private let historyQueue = DispatchQueue(label: "com.xstats.history", qos: .utility)
+
+    private func getHistoryBuffer(for type: String) -> HistoryBuffer<Double> {
+        if let existing = historyBuffers[type] {
+            return existing
+        }
+        let buffer = HistoryBuffer<Double>(capacity: 60, defaultValue: 0)
+        historyBuffers[type] = buffer
+        return buffer
+    }
+
+    private func updateHistory(_ key: String, value: Double) {
+        historyQueue.async { [weak self] in
+            self?.getHistoryBuffer(for: key).add(value)
+        }
+    }
 
     private var isRunning = false
     var onUpdate: ((SystemStats) -> Void)?
+    private var isSensorsEnabled = false
 
     private init() {
-        // StatsCollector initialized
+        setupSettingsObserver()
     }
 
     func startMonitoring() {
@@ -72,13 +83,13 @@ class StatsCollector: ObservableObject {
         }
 
         // Update history buffers
-        cpuHistory.add(cpu.totalUsage)
-        memoryHistory.add(memory.usagePercentage)
-        networkUpHistory.add(network.uploadSpeed)
-        networkDownHistory.add(network.downloadSpeed)
-        diskReadHistory.add(disk.readSpeed)
-        diskWriteHistory.add(disk.writeSpeed)
-        gpuHistory.add(gpu?.usage ?? 0)
+        updateHistory("cpu", cpu.totalUsage)
+        updateHistory("memory", memory.usagePercentage)
+        updateHistory("network_up", network.uploadSpeed)
+        updateHistory("network_down", network.downloadSpeed)
+        updateHistory("disk_read", disk.readSpeed)
+        updateHistory("disk_write", disk.writeSpeed)
+        updateHistory("gpu", gpu?.usage ?? 0)
 
         let stats = SystemStats(
             cpu: cpu,
@@ -101,34 +112,63 @@ class StatsCollector: ObservableObject {
 
     // History getters
     func getCpuHistory() -> [Double] {
-        cpuHistory.getValues()
+        getHistoryBuffer(for: "cpu").getValues()
     }
 
     func getMemoryHistory() -> [Double] {
-        memoryHistory.getValues()
+        getHistoryBuffer(for: "memory").getValues()
     }
 
     func getNetworkUpHistory() -> [Double] {
-        networkUpHistory.getValues()
+        getHistoryBuffer(for: "network_up").getValues()
     }
 
     func getNetworkDownHistory() -> [Double] {
-        networkDownHistory.getValues()
+        getHistoryBuffer(for: "network_down").getValues()
     }
 
     func getDiskReadHistory() -> [Double] {
-        diskReadHistory.getValues()
+        getHistoryBuffer(for: "disk_read").getValues()
     }
 
     func getDiskWriteHistory() -> [Double] {
-        diskWriteHistory.getValues()
+        getHistoryBuffer(for: "disk_write").getValues()
     }
 
     func getGpuHistory() -> [Double] {
-        gpuHistory.getValues()
+        getHistoryBuffer(for: "gpu").getValues()
     }
 
     func getCurrentStats() -> SystemStats {
         return currentStats
+    }
+
+    // MARK: - Settings Management
+
+    func setupSettingsObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(settingsChanged),
+            name: .menuBarSettingsChanged,
+            object: nil
+        )
+    }
+
+    @objc private func settingsChanged() {
+        // Clean up unused history buffers
+        let enabledTypes = MenuBarSettings.shared.enabledItems.map { "\($0.type)" }
+        let bufferKeys = Array(historyBuffers.keys)
+
+        for key in bufferKeys {
+            if !enabledTypes.contains(key) {
+                historyQueue.async { [weak self] in
+                    self?.historyBuffers.removeValue(forKey: key)
+                }
+            }
+        }
+    }
+
+    func setSensorsEnabled(_ enabled: Bool) {
+        isSensorsEnabled = enabled
     }
 }
