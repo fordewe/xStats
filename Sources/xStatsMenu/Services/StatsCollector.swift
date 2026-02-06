@@ -213,5 +213,10 @@ class StatsCollector: ObservableObject {
 
     func setSensorsEnabled(_ enabled: Bool) {
         isSensorsEnabled = enabled
+        // Trigger immediate update when enabling sensors (popover opened)
+        // This ensures temp/fan data is available right away instead of waiting for next 1s interval
+        if enabled {
+            updateStats()
+        }
     }
 }
