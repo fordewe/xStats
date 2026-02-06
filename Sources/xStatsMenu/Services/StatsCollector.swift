@@ -84,62 +84,39 @@ class StatsCollector: ObservableObject {
         let enabledItems = menuBarSettings.enabledItems
         let enabledTypes = Set(enabledItems.map { $0.type })
 
-        // Initialize stats with empty values
-        var stats = SystemStats.empty()
+        // Always collect all stats for popover (popover shows all panels)
+        let stats = SystemStats(
+            cpu: cpuMonitor.getStats(),
+            memory: memoryMonitor.getStats(),
+            disk: diskMonitor.getStats(),
+            network: networkMonitor.getStats(),
+            gpu: gpuMonitor.getStats(),
+            battery: batteryMonitor.getStats(),
+            temperature: isSensorsEnabled ? temperatureMonitor.getStats() : nil,
+            fan: isSensorsEnabled ? fanMonitor.getStats() : nil
+        )
 
-        // CPU monitoring
+        // Only update history buffers for menu bar enabled items (optimization)
         if enabledTypes.contains(.cpu) {
-            let cpu = cpuMonitor.getStats()
-            stats.cpu = cpu
-            updateHistory("cpu", value: cpu.totalUsage)
+            updateHistory("cpu", value: stats.cpu.totalUsage)
         }
 
-        // Memory monitoring
         if enabledTypes.contains(.memory) {
-            let memory = memoryMonitor.getStats()
-            stats.memory = memory
-            updateHistory("memory", value: memory.usagePercentage)
+            updateHistory("memory", value: stats.memory.usagePercentage)
         }
 
-        // Disk monitoring
         if enabledTypes.contains(.disk) {
-            let disk = diskMonitor.getStats()
-            stats.disk = disk
-            updateHistory("disk_read", value: disk.readSpeed)
-            updateHistory("disk_write", value: disk.writeSpeed)
+            updateHistory("disk_read", value: stats.disk.readSpeed)
+            updateHistory("disk_write", value: stats.disk.writeSpeed)
         }
 
-        // Network monitoring
         if enabledTypes.contains(.network) {
-            let network = networkMonitor.getStats()
-            stats.network = network
-            updateHistory("network_up", value: network.uploadSpeed)
-            updateHistory("network_down", value: network.downloadSpeed)
+            updateHistory("network_up", value: stats.network.uploadSpeed)
+            updateHistory("network_down", value: stats.network.downloadSpeed)
         }
 
-        // Battery monitoring (always check - lightweight)
-        if enabledTypes.contains(.battery) {
-            stats.battery = batteryMonitor.getStats()
-        }
-
-        // GPU monitoring
-        if enabledTypes.contains(.gpu) {
-            let gpu = gpuMonitor.getStats()
-            if let gpu = gpu {
-                stats.gpu = gpu
-                updateHistory("gpu", value: gpu.usage)
-            }
-        }
-
-        // Temperature monitoring (expensive - only when enabled OR sensors needed)
-        let needsTemp = enabledTypes.contains(.temperature) || isSensorsEnabled
-        if needsTemp {
-            stats.temperature = temperatureMonitor.getStats()
-        }
-
-        // Fan monitoring (expensive - only when sensors needed)
-        if isSensorsEnabled {
-            stats.fan = fanMonitor.getStats()
+        if enabledTypes.contains(.gpu), let gpu = stats.gpu {
+            updateHistory("gpu", value: gpu.usage)
         }
 
         // Debug: Log temperature when available (only once when first found)
