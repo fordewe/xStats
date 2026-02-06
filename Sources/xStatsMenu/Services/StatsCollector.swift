@@ -6,6 +6,10 @@ class StatsCollector: ObservableObject {
     private let logger = DebugLogger.shared
     private let menuBarSettings = MenuBarSettings.shared
     private var hasLoggedTemp = false
+    #if DEBUG
+    private var lastUpdateTime: Date = Date()
+    private var updateCount: Int = 0
+    #endif
     @Published private(set) var currentStats: SystemStats = .empty()
 
     // Monitor services
@@ -73,6 +77,10 @@ class StatsCollector: ObservableObject {
     }
 
     private func updateStats() {
+        #if DEBUG
+        let startTime = Date()
+        #endif
+
         let enabledItems = menuBarSettings.enabledItems
         let enabledTypes = Set(enabledItems.map { $0.type })
 
@@ -139,6 +147,18 @@ class StatsCollector: ObservableObject {
             logger.log("[StatsCollector] Temperature sensors found - CPU: \(temperature.cpu.map { String(format: "%.1f", $0) } ?? "N/A")°C, GPU: \(temperature.gpu.map { String(format: "%.1f", $0) } ?? "N/A")°C")
             hasLoggedTemp = true
         }
+
+        #if DEBUG
+        let elapsed = Date().timeIntervalSince(startTime)
+        let interval = Date().timeIntervalSince(lastUpdateTime)
+        lastUpdateTime = Date()
+        updateCount += 1
+
+        // Log every 60 updates (1 minute) or if update is slow
+        if updateCount % 60 == 0 || elapsed > 0.1 {
+            logger.log("[Performance] updateStats(\(updateCount)) took \(String(format: "%.2f", elapsed * 1000))ms (interval: \(String(format: "%.2f", interval))s)")
+        }
+        #endif
 
         // Update on main thread
         DispatchQueue.main.async { [weak self] in
