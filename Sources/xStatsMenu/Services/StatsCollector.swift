@@ -4,6 +4,7 @@ class StatsCollector: ObservableObject {
     static let shared = StatsCollector()
 
     private let logger = DebugLogger.shared
+    private let menuBarSettings = MenuBarSettings.shared
     private var hasLoggedTemp = false
     @Published private(set) var currentStats: SystemStats = .empty()
 
@@ -72,49 +73,78 @@ class StatsCollector: ObservableObject {
     }
 
     private func updateStats() {
-        // Get real stats from monitors
-        let cpu = cpuMonitor.getStats()
-        let memory = memoryMonitor.getStats()
-        let disk = diskMonitor.getStats()
-        let network = networkMonitor.getStats()
-        let battery = batteryMonitor.getStats()
-        let temperature = temperatureMonitor.getStats()
-        let fan = fanMonitor.getStats()
-        let gpu = gpuMonitor.getStats()
+        let enabledItems = menuBarSettings.enabledItems
+        let enabledTypes = Set(enabledItems.map { $0.type })
 
-        // Debug: Log temperature when available (only once when first found)
-        if temperature != nil, !hasLoggedTemp {
-            if let t = temperature {
-                logger.log("[StatsCollector] Temperature sensors found - CPU: \(t.cpu.map { String(format: "%.1f", $0) } ?? "N/A")°C, GPU: \(t.gpu.map { String(format: "%.1f", $0) } ?? "N/A")°C")
-                hasLoggedTemp = true
+        // Initialize stats with empty values
+        var stats = SystemStats.empty()
+
+        // CPU monitoring
+        if enabledTypes.contains(.cpu) {
+            let cpu = cpuMonitor.getStats()
+            stats.cpu = cpu
+            updateHistory("cpu", value: cpu.totalUsage)
+        }
+
+        // Memory monitoring
+        if enabledTypes.contains(.memory) {
+            let memory = memoryMonitor.getStats()
+            stats.memory = memory
+            updateHistory("memory", value: memory.usagePercentage)
+        }
+
+        // Disk monitoring
+        if enabledTypes.contains(.disk) {
+            let disk = diskMonitor.getStats()
+            stats.disk = disk
+            updateHistory("disk_read", value: disk.readSpeed)
+            updateHistory("disk_write", value: disk.writeSpeed)
+        }
+
+        // Network monitoring
+        if enabledTypes.contains(.network) {
+            let network = networkMonitor.getStats()
+            stats.network = network
+            updateHistory("network_up", value: network.uploadSpeed)
+            updateHistory("network_down", value: network.downloadSpeed)
+        }
+
+        // Battery monitoring (always check - lightweight)
+        if enabledTypes.contains(.battery) {
+            stats.battery = batteryMonitor.getStats()
+        }
+
+        // GPU monitoring
+        if enabledTypes.contains(.gpu) {
+            let gpu = gpuMonitor.getStats()
+            if let gpu = gpu {
+                stats.gpu = gpu
+                updateHistory("gpu", value: gpu.usage)
             }
         }
 
-        // Update history buffers
-        updateHistory("cpu", cpu.totalUsage)
-        updateHistory("memory", memory.usagePercentage)
-        updateHistory("network_up", network.uploadSpeed)
-        updateHistory("network_down", network.downloadSpeed)
-        updateHistory("disk_read", disk.readSpeed)
-        updateHistory("disk_write", disk.writeSpeed)
-        updateHistory("gpu", gpu?.usage ?? 0)
+        // Temperature monitoring (expensive - only when enabled OR sensors needed)
+        let needsTemp = enabledTypes.contains(.temperature) || isSensorsEnabled
+        if needsTemp {
+            stats.temperature = temperatureMonitor.getStats()
+        }
 
-        let stats = SystemStats(
-            cpu: cpu,
-            memory: memory,
-            disk: disk,
-            network: network,
-            gpu: gpu,
-            battery: battery,
-            temperature: temperature,
-            fan: fan
-        )
+        // Fan monitoring (expensive - only when sensors needed)
+        if isSensorsEnabled {
+            stats.fan = fanMonitor.getStats()
+        }
+
+        // Debug: Log temperature when available (only once when first found)
+        if let temperature = stats.temperature, !hasLoggedTemp {
+            logger.log("[StatsCollector] Temperature sensors found - CPU: \(temperature.cpu.map { String(format: "%.1f", $0) } ?? "N/A")°C, GPU: \(temperature.gpu.map { String(format: "%.1f", $0) } ?? "N/A")°C")
+            hasLoggedTemp = true
+        }
 
         // Update on main thread
-        DispatchQueue.main.async {
-            self.currentStats = stats
+        DispatchQueue.main.async { [weak self] in
+            self?.currentStats = stats
             // Call the callback if set
-            self.onUpdate?(stats)
+            self?.onUpdate?(stats)
         }
     }
 
