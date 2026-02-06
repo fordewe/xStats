@@ -21,6 +21,14 @@ class StatsCollector: ObservableObject {
     private var historyBuffers: [String: HistoryBuffer<Double>] = [:]
     private let historyQueue = DispatchQueue(label: "com.xstats.history", qos: .utility)
 
+    private let historyKeyMapping: [MenuBarItemType: [String]] = [
+        .cpu: ["cpu"],
+        .memory: ["memory"],
+        .network: ["network_up", "network_down"],
+        .disk: ["disk_read", "disk_write"],
+        .gpu: ["gpu"]
+    ]
+
     private func getHistoryBuffer(for type: String) -> HistoryBuffer<Double> {
         if let existing = historyBuffers[type] {
             return existing
@@ -156,14 +164,22 @@ class StatsCollector: ObservableObject {
 
     @objc private func settingsChanged() {
         // Clean up unused history buffers
-        let enabledTypes = MenuBarSettings.shared.enabledItems.map { "\($0.type)" }
-        let bufferKeys = Array(historyBuffers.keys)
+        let enabledItems = MenuBarSettings.shared.enabledItems
+        let enabledTypes = Set(enabledItems.map { $0.type })
 
-        for key in bufferKeys {
-            if !enabledTypes.contains(key) {
-                historyQueue.async { [weak self] in
-                    self?.historyBuffers.removeValue(forKey: key)
-                }
+        var validKeys: Set<String> = []
+        for type in enabledTypes {
+            if let keys = historyKeyMapping[type] {
+                validKeys.formUnion(keys)
+            }
+        }
+
+        let bufferKeys = Set(historyBuffers.keys)
+        let keysToRemove = bufferKeys.subtracting(validKeys)
+
+        for key in keysToRemove {
+            historyQueue.async { [weak self] in
+                self?.historyBuffers.removeValue(forKey: key)
             }
         }
     }
