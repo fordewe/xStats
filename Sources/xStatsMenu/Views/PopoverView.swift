@@ -46,29 +46,23 @@ struct PopoverView: View {
             
             // Footer
             HStack {
-                // Status indicator
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Theme.accentGreen)
-                        .frame(width: 6, height: 6)
-                    Text("Monitoring")
-                        .font(Theme.smallFont)
-                        .foregroundColor(Theme.textTertiary)
-                }
-                
                 Spacer()
-                
-                // Live indicator
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 6, height: 6)
-                    Text("Live")
-                        .font(Theme.smallFont)
-                        .foregroundColor(Theme.textTertiary)
+
+                // Activity Monitor button
+                Button(action: { openActivityMonitor() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("Activity Monitor")
+                            .font(Theme.smallFont)
+                    }
+                    .foregroundColor(Theme.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.background.opacity(0.5))
+                    .cornerRadius(4)
                 }
-                
-                Spacer()
+                .buttonStyle(.plain)
 
                 // Settings button
                 Button(action: { openSettings() }) {
@@ -85,7 +79,7 @@ struct PopoverView: View {
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
-                
+
                 // Quit button
                 Button(action: { NSApp.terminate(nil) }) {
                     HStack(spacing: 4) {
@@ -142,6 +136,13 @@ struct PopoverView: View {
 
         // Store reference to prevent multiple windows
         PopoverView.settingsWindow = settingsWindow
+    }
+
+    private func openActivityMonitor() {
+        // Open Activity Monitor using its bundle ID
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ActivityMonitor") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // EXISTING: Vertical layout (400x600) - fallback
