@@ -239,33 +239,36 @@ struct SensorTemperatureRow: View {
 // MARK: - Fan Section
 struct FanSectionView: View {
     let fan: FanStats
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "fan")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Theme.accentCyan)
-                
+
                 Text("Fans")
                     .font(Theme.labelFont)
                     .foregroundColor(Theme.textSecondary)
+
+                Spacer()
+
+                Text("\(fan.count) detected")
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundColor(Theme.textTertiary)
             }
-            
+
             ForEach(0..<min(fan.count, fan.speeds.count), id: \.self) { index in
-                // Only show fans that have non-zero speeds
-                if fan.speeds[index] > 0 {
-                    HStack {
-                        Text("Fan \(index + 1)")
-                            .font(Theme.detailFont)
-                            .foregroundColor(Theme.textSecondary)
+                HStack {
+                    Text("Fan \(index + 1)")
+                        .font(Theme.detailFont)
+                        .foregroundColor(Theme.textSecondary)
 
-                        Spacer()
+                    Spacer()
 
-                        Text("\(fan.speeds[index]) RPM")
-                            .font(Theme.smallFont)
-                            .foregroundColor(Theme.textPrimary)
-                    }
+                    Text("\(fan.speeds[index]) RPM")
+                        .font(Theme.smallFont)
+                        .foregroundColor(fan.speeds[index] > 0 ? Theme.textPrimary : Theme.textTertiary)
                 }
             }
         }

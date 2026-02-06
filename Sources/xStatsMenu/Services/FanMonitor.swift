@@ -20,22 +20,20 @@ class FanMonitor {
         for i in 0..<fanCount {
             var speed: Int?
 
-            // Try different key patterns until we find one that works
+            // Try different key patterns until we find a readable one
             for pattern in fanKeyPatterns {
                 let key = String(format: pattern, i)
-                speed = smc.readFanSpeed(key: key)
-                if speed != nil && speed! > 0 {
-                    break // Use this value
+                if let readSpeed = smc.readFanSpeed(key: key) {
+                    speed = readSpeed
+                    // If we got a non-zero speed, use it; otherwise keep trying other patterns
+                    if readSpeed > 0 {
+                        break
+                    }
                 }
             }
 
-            // If we got a valid speed, add it
-            if let validSpeed = speed, validSpeed > 0 {
-                speeds.append(validSpeed)
-            } else {
-                // Add 0 as placeholder for fans we couldn't read
-                speeds.append(0)
-            }
+            // Use the speed we found, or 0 if fan is idle / unreadable
+            speeds.append(speed ?? 0)
         }
 
         return FanStats(speeds: speeds, count: fanCount)

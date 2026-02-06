@@ -189,21 +189,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let trailingSpacing: CGFloat = index < configs.count - 1 ? spacing : 0
             switch config.type {
             case .cpu, .memory, .disk:
+                let itemLabel: String
+                let itemPercentage: Double
+                let itemColor: NSColor
+                switch config.type {
+                case .cpu:
+                    itemLabel = "CPU"
+                    itemPercentage = stats.cpu.totalUsage
+                    itemColor = cpuNSColor(stats.cpu.totalUsage)
+                case .memory:
+                    itemLabel = "MEM"
+                    itemPercentage = stats.memory.usagePercentage
+                    itemColor = memNSColor(stats.memory.usagePercentage)
+                case .disk:
+                    itemLabel = "DSK"
+                    itemPercentage = stats.disk.usagePercentage
+                    itemColor = diskNSColor(stats.disk.usagePercentage)
+                default:
+                    itemLabel = ""
+                    itemPercentage = 0
+                    itemColor = .secondaryLabelColor
+                }
+
                 if config.style == .iconWithText {
                     _ = drawIconWithText(
                         at: xOffset,
                         iconName: config.customIcon,
-                        text: config.type == .cpu ? "\(Int(stats.cpu.totalUsage))%" : "\(Int(stats.memory.usagePercentage))%",
-                        color: config.type == .cpu ? cpuNSColor(stats.cpu.totalUsage) : memNSColor(stats.memory.usagePercentage),
+                        text: "\(Int(itemPercentage))%",
+                        color: itemColor,
                         height: itemHeight
                     )
                     xOffset += 44 + trailingSpacing
                 } else if config.style == .percentage {
                     drawPercentageText(
                         at: xOffset,
-                        label: config.type == .cpu ? "CPU" : "MEM",
-                        percentage: config.type == .cpu ? stats.cpu.totalUsage : stats.memory.usagePercentage,
-                        color: config.type == .cpu ? cpuNSColor(stats.cpu.totalUsage) : memNSColor(stats.memory.usagePercentage),
+                        label: itemLabel,
+                        percentage: itemPercentage,
+                        color: itemColor,
                         labelFont: labelFont,
                         valueFont: valueFont,
                         height: itemHeight
@@ -212,9 +234,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     drawLabeledBar(
                         at: xOffset,
-                        label: config.type == .cpu ? "CPU" : "MEM",
-                        value: config.type == .cpu ? stats.cpu.totalUsage / 100 : stats.memory.usagePercentage / 100,
-                        color: config.type == .cpu ? cpuNSColor(stats.cpu.totalUsage) : memNSColor(stats.memory.usagePercentage),
+                        label: itemLabel,
+                        value: itemPercentage / 100,
+                        color: itemColor,
                         barWidth: barWidth,
                         barHeight: barHeight,
                         labelFont: labelFont,

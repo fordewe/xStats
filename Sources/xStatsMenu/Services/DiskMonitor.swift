@@ -17,7 +17,7 @@ class DiskMonitor {
         if statfs("/", &stat) == 0 {
             let blockSize = UInt64(stat.f_bsize)
             total = UInt64(stat.f_blocks) * blockSize
-            free = UInt64(stat.f_bfree) * blockSize
+            free = UInt64(stat.f_bavail) * blockSize
             used = total - free
         }
 

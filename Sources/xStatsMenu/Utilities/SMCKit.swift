@@ -246,13 +246,13 @@ class SMCKit {
             let value = UInt16(bytes[0]) << 8 | UInt16(bytes[1])
             return Int(value) / 4 // Divide by 4 for fpe2 (shift right 2 bits)
 
-        case "flt ": // Float
+        case "flt ": // Float (little-endian on Apple Silicon)
             if bytes.count >= 4 {
-                let value = UInt32(bytes[0]) << 24 | UInt32(bytes[1]) << 16 | UInt32(bytes[2]) << 8 | UInt32(bytes[3])
+                let value = UInt32(bytes[3]) << 24 | UInt32(bytes[2]) << 16 | UInt32(bytes[1]) << 8 | UInt32(bytes[0])
                 let floatValue = Float(bitPattern: value)
-                // Validate: must be non-negative, finite, non-NaN, and within Int range
+                // Validate: must be non-negative, finite, non-NaN, and within reasonable range
                 guard floatValue >= 0,
-                      floatValue <= Float(Int.max),
+                      floatValue < 100000,
                       !floatValue.isNaN,
                       !floatValue.isInfinite else {
                     return nil
@@ -292,55 +292,46 @@ class SMCKit {
             return cached
         }
 
-        // Try FNum key first
+        // Try FNum key first - trust the system's reported fan count
         if let result = readSMCKey("FNum") {
             let bytes = result.bytes
             if bytes.count >= 1 && bytes[0] > 0 {
                 let count = Int(bytes[0])
-                // Validate by checking if we can actually read fan speeds
-                var validCount = 0
+                // Validate that at least one fan key is readable (speed can be 0 when idle)
                 for i in 0..<count {
                     let key = String(format: "F%dAc", i)
-                    if let speed = readFanSpeed(key: key), speed > 0 {
-                        validCount += 1
+                    if readSMCKey(key) != nil {
+                        // Key exists and is readable - trust FNum count
+                        cachedFanCount = count
+                        return count
                     }
-                }
-                // If we found valid fans, use the smaller of FNum or validCount
-                if validCount > 0 {
-                    cachedFanCount = validCount
-                    return cachedFanCount!
                 }
             }
         }
 
-        // Fallback: Probe for fans directly and validate they have actual speeds
-        var validFans: [Int] = []
+        // Fallback: Probe for fans by checking if keys exist (not requiring speed > 0)
+        var count = 0
         for i in 0..<8 {
-            // Try different key patterns
             let patterns = ["F%dAc", "F%dMd", "F%dTg"]
-            var foundValid = false
+            var found = false
 
             for pattern in patterns {
                 let key = String(format: pattern, i)
-                if let speed = readFanSpeed(key: key), speed > 0 {
-                    validFans.append(i)
-                    foundValid = true
+                if readSMCKey(key) != nil {
+                    count += 1
+                    found = true
                     break
                 }
             }
 
-            if !foundValid {
-                // Stop if we didn't find a valid fan
-                // But allow gaps (some Macs have non-sequential fan numbers)
-                if validFans.isEmpty && i > 1 {
-                    // If we haven't found any fans by index 2, probably no fans
-                    break
-                }
+            // If no key found for this index and we've checked beyond index 1, stop
+            if !found && count == 0 && i > 1 {
+                break
             }
         }
 
-        cachedFanCount = validFans.count
-        return cachedFanCount!
+        cachedFanCount = count
+        return count
     }
     
     // Get all available temperature keys
