@@ -8,7 +8,61 @@ class MemoryMonitor {
         sysctlbyname("hw.memsize", &size, &len, nil, 0)
         return size
     }()
-    
+
+    func getMemoryPressure(free: UInt64, total: UInt64, swapUsed: UInt64, swapTotal: UInt64, compressed: UInt64) -> MemoryStats.MemoryPressure {
+        // Calculate memory pressure based on multiple factors
+        // This approximates Activity Monitor's memory pressure indicator
+
+        let freePercent = Double(free) / Double(total) * 100
+
+        // Factor 1: Swap usage
+        var swapPressure = 0.0
+        if swapTotal > 0 {
+            let swapPercent = Double(swapUsed) / Double(swapTotal) * 100
+            // High swap usage indicates memory pressure
+            if swapPercent > 50 {
+                swapPressure = 30
+            } else if swapPercent > 20 {
+                swapPressure = 15
+            } else if swapPercent > 5 {
+                swapPressure = 5
+            }
+        }
+
+        // Factor 2: Compressed memory (high compression = pressure)
+        var compressedPressure = 0.0
+        let compressedPercent = Double(compressed) / Double(total) * 100
+        if compressedPercent > 20 {
+            compressedPressure = 25
+        } else if compressedPercent > 10 {
+            compressedPressure = 10
+        } else if compressedPercent > 5 {
+            compressedPressure = 5
+        }
+
+        // Factor 3: Free memory
+        var freePressure = 0.0
+        if freePercent < 5 {
+            freePressure = 40
+        } else if freePercent < 10 {
+            freePressure = 20
+        } else if freePercent < 15 {
+            freePressure = 10
+        }
+
+        // Calculate total pressure score (0-100)
+        let totalPressure = swapPressure + compressedPressure + freePressure
+
+        // Determine pressure level based on total score
+        if totalPressure >= 50 {
+            return .critical
+        } else if totalPressure >= 20 {
+            return .warning
+        } else {
+            return .normal
+        }
+    }
+
     func getStats() -> MemoryStats {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
@@ -46,6 +100,15 @@ class MemoryMonitor {
         // Get swap info
         let (swapTotal, swapUsed) = getSwapInfo()
 
+        // Calculate memory pressure based on multiple factors
+        let memoryPressure = getMemoryPressure(
+            free: free,
+            total: total,
+            swapUsed: swapUsed,
+            swapTotal: swapTotal,
+            compressed: compressed
+        )
+
         return MemoryStats(
             total: total,
             used: used,
@@ -55,7 +118,8 @@ class MemoryMonitor {
             wired: wired,
             compression: compressed,
             swapTotal: swapTotal,
-            swapUsed: swapUsed
+            swapUsed: swapUsed,
+            pressure: memoryPressure
         )
     }
 

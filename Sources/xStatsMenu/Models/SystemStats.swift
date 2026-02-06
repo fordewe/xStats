@@ -60,17 +60,11 @@ struct MemoryStats {
     var compression: UInt64
     var swapTotal: UInt64
     var swapUsed: UInt64
+    var pressure: MemoryPressure
 
     var usagePercentage: Double {
         guard total > 0 else { return 0 }
         return Double(used) / Double(total) * 100
-    }
-
-    var pressure: MemoryPressure {
-        let freePercent = Double(free) / Double(total) * 100
-        if freePercent < 10 { return .critical }
-        if freePercent < 20 { return .warning }
-        return .normal
     }
 
     enum MemoryPressure {
@@ -81,7 +75,7 @@ struct MemoryStats {
         MemoryStats(
             total: 0, used: 0, free: 0, active: 0,
             inactive: 0, wired: 0, compression: 0,
-            swapTotal: 0, swapUsed: 0
+            swapTotal: 0, swapUsed: 0, pressure: .normal
         )
     }
 }
