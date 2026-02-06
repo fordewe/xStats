@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 
 APP_NAME="xStats"
 BUNDLE_ID="com.xstats.menu"
-VERSION="1.0.0"
+VERSION="1.0.1"
 BUILD_DIR=".build/arm64-apple-macosx/release"
 APP_BUNDLE="$BUILD_DIR/${APP_NAME}.app"
 DMG_NAME="xStats-${VERSION}.dmg"
@@ -73,6 +73,10 @@ mkdir -p "$DMG_DIR"
 
 # Copy app to DMG directory
 cp -R "$APP_BUNDLE" "$DMG_DIR/"
+
+# Clear extended attributes (quarantine flags) so users can install without Gatekeeper issues
+echo "🔒 Clearing extended attributes..."
+xattr -cr "$DMG_DIR/${APP_NAME}.app"
 
 # Create Applications symlink
 ln -s /Applications "$DMG_DIR/Applications"
