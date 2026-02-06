@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "xStatsMenu",
+    name: "xStats",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "xStatsMenu",
-            targets: ["xStatsMenu"]
+            name: "xStats",
+            targets: ["xStats"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "xStatsMenu",
+            name: "xStats",
             path: "Sources/xStatsMenu",
             exclude: ["Resources/Info.plist", "Resources/AppIcon.iconset", "Resources/DMGVolumeIcon.iconset", "Resources/DMGVolumeIcon.icns"],
             resources: [
