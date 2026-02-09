@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 
 APP_NAME="xStats"
 BUNDLE_ID="com.xstats.menu"
-VERSION="1.0.3"
+VERSION="1.0.4"
 BUILD_DIR=".build/arm64-apple-macosx/release"
 APP_BUNDLE="$BUILD_DIR/${APP_NAME}.app"
 DMG_NAME="xStats-${VERSION}.dmg"

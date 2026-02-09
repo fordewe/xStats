@@ -19,6 +19,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isBatteryVisible = true
     private var blinkTimer: Timer?
 
+    // Blink state for network indicator (independent for download/upload)
+    private var isDownloadBlinkOn = true
+    private var isUploadBlinkOn = true
+    private var networkBlinkTick: UInt8 = 0
+    private var networkBlinkTimer: Timer?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup status bar item
         setupStatusBar()
@@ -51,6 +57,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         blinkTimer?.invalidate()
         blinkTimer = nil
         isBatteryVisible = true
+    }
+
+    // MARK: - Network Indicator Blink Timer
+
+    private func startNetworkBlinkTimer() {
+        guard networkBlinkTimer == nil else { return }
+        networkBlinkTick = 0
+        networkBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.networkBlinkTick &+= 1
+            // Download toggles every 2 ticks (0.5s cycle)
+            if self.networkBlinkTick % 2 == 0 { self.isDownloadBlinkOn.toggle() }
+            // Upload toggles every 3 ticks (0.75s cycle)
+            if self.networkBlinkTick % 3 == 0 { self.isUploadBlinkOn.toggle() }
+            self.updateDisplay(with: self.statsCollector.currentStats)
+        }
+    }
+
+    private func stopNetworkBlinkTimer() {
+        networkBlinkTimer?.invalidate()
+        networkBlinkTimer = nil
+        isDownloadBlinkOn = true
+        isUploadBlinkOn = true
+        networkBlinkTick = 0
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -110,6 +140,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let enabledItems = menuBarSettings.enabledItems
 
+        // Manage network indicator blink timer
+        let networkConfig = enabledItems.first(where: { $0.type == .network })
+        let hasNetworkTraffic = stats.network.downloadSpeed > 0 || stats.network.uploadSpeed > 0
+        let needsNetworkBlink = networkConfig?.style == .indicator && hasNetworkTraffic
+        if needsNetworkBlink && networkBlinkTimer == nil {
+            startNetworkBlinkTimer()
+        } else if !needsNetworkBlink && networkBlinkTimer != nil {
+            stopNetworkBlinkTimer()
+        }
+
         if enabledItems.isEmpty {
             button.title = "\(Int(stats.cpu.totalUsage))%"
             button.image = nil
@@ -138,6 +178,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         statsCollector.stopMonitoring()
         blinkTimer?.invalidate()
+        networkBlinkTimer?.invalidate()
     }
 
     // MARK: - Menu Bar Image Creation
@@ -150,19 +191,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let leftPadding: CGFloat = 4
         let rightPadding: CGFloat = 4
         let indicatorWidth: CGFloat = 10
-        let speedStyleWidth: CGFloat = 55
+        let speedStyleWidth: CGFloat = 58
 
         // Pre-compute network speed texts (reused in width calc and drawing)
         let networkSpeedText: String = {
             let up = stats.network.uploadSpeed
             let down = stats.network.downloadSpeed
             if up > 0 || down > 0 {
+                let upStr = formatCompactSpeed(up)
+                let downStr = formatCompactSpeed(down)
                 if up > 1024 && down > 1024 {
-                    return String(format: "%.1f↑ %.1f↓", up / 1024, down / 1024)
+                    return "\(upStr)↑ \(downStr)↓"
                 } else if up > 1024 {
-                    return String(format: "%.1f↑", up / 1024)
+                    return "\(upStr)↑"
                 } else if down > 1024 {
-                    return String(format: "%.1f↓", down / 1024)
+                    return "\(downStr)↓"
                 } else {
                     return formatSpeed(up + down)
                 }
@@ -326,13 +369,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let downloadActive = stats.network.downloadSpeed > 0
                     let uploadActive = stats.network.uploadSpeed > 0
 
-                    // Download dot (green) - top
-                    let downloadColor = downloadActive ? NSColor.systemGreen : NSColor.darkGray
+                    // Download dot (green) - top: blink independently when active
+                    let downloadColor: NSColor
+                    if downloadActive {
+                        downloadColor = isDownloadBlinkOn ? NSColor.systemGreen : NSColor.systemGreen.withAlphaComponent(0.15)
+                    } else {
+                        downloadColor = NSColor.darkGray
+                    }
                     downloadColor.setFill()
                     NSBezierPath(ovalIn: NSRect(x: dotX, y: startY, width: dotSize, height: dotSize)).fill()
 
-                    // Upload dot (red) - bottom
-                    let uploadColor = uploadActive ? NSColor.systemRed : NSColor.darkGray
+                    // Upload dot (red) - bottom: blink independently when active
+                    let uploadColor: NSColor
+                    if uploadActive {
+                        uploadColor = isUploadBlinkOn ? NSColor.systemRed : NSColor.systemRed.withAlphaComponent(0.15)
+                    } else {
+                        uploadColor = NSColor.darkGray
+                    }
                     uploadColor.setFill()
                     NSBezierPath(ovalIn: NSRect(x: dotX, y: startY + dotSize + dotSpacing, width: dotSize, height: dotSize)).fill()
 
@@ -769,10 +822,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func formatSpeed(_ speed: Double) -> String {
         if speed >= 1024 * 1024 {
-            return String(format: "%.1fMB/s", speed / (1024 * 1024))
+            return String(format: "%.1fM", speed / (1024 * 1024))
         } else if speed >= 1024 {
-            return String(format: "%.0fKB/s", speed / 1024)
+            return String(format: "%dK", Int(speed / 1024))
         }
-        return "0KB/s"
+        return "0K"
+    }
+
+    private func formatCompactSpeed(_ speed: Double) -> String {
+        if speed >= 1024 * 1024 {
+            return String(format: "%.1fM", speed / (1024 * 1024))
+        } else if speed >= 1024 {
+            return String(format: "%.0fK", speed / 1024)
+        }
+        return "0"
     }
 }
