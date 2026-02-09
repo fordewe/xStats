@@ -9,7 +9,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Cached fonts and attributes for menu bar rendering
     private let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
-    private let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    private let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+    private let networkFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+
+    // Cache for tinted SF Symbol icons: [iconName: [colorHash: NSImage]]
+    private var iconCache: [String: [Int: NSImage]] = [:]
 
     // Blink state for low battery warning (< 30%)
     private var isBatteryVisible = true
@@ -29,22 +33,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start monitoring
         statsCollector.startMonitoring()
-
-        // Start blink timer for low battery warning
-        startBlinkTimer()
     }
 
     // MARK: - Battery Blink Timer
 
     private func startBlinkTimer() {
-        // Toggle visibility every 1 second for low battery warning
+        guard blinkTimer == nil else { return }
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.isBatteryVisible.toggle()
-            // Trigger update to refresh menu bar
             if let self = self {
                 self.updateDisplay(with: self.statsCollector.currentStats)
             }
         }
+    }
+
+    private func stopBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+        isBatteryVisible = true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -94,6 +100,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Manage blink timer: only run when battery < 30%
+        let needsBlink = stats.battery.map { $0.level < 30 } ?? false
+        if needsBlink && blinkTimer == nil {
+            startBlinkTimer()
+        } else if !needsBlink && blinkTimer != nil {
+            stopBlinkTimer()
+        }
+
         let enabledItems = menuBarSettings.enabledItems
 
         if enabledItems.isEmpty {
@@ -132,9 +146,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let itemHeight: CGFloat = 24
         let barWidth: CGFloat = 30
         let barHeight: CGFloat = 7
-        let spacing: CGFloat = 5  // Comfortable spacing between items
+        let spacing: CGFloat = 12
         let leftPadding: CGFloat = 4
         let rightPadding: CGFloat = 4
+        let indicatorWidth: CGFloat = 10
+        let speedStyleWidth: CGFloat = 55
+
+        // Pre-compute network speed texts (reused in width calc and drawing)
+        let networkSpeedText: String = {
+            let up = stats.network.uploadSpeed
+            let down = stats.network.downloadSpeed
+            if up > 0 || down > 0 {
+                if up > 1024 && down > 1024 {
+                    return String(format: "%.1f↑ %.1f↓", up / 1024, down / 1024)
+                } else if up > 1024 {
+                    return String(format: "%.1f↑", up / 1024)
+                } else if down > 1024 {
+                    return String(format: "%.1f↓", down / 1024)
+                } else {
+                    return formatSpeed(up + down)
+                }
+            }
+            return "0K"
+        }()
+        let networkDownText = formatSpeed(stats.network.downloadSpeed)
+        let networkUpText = formatSpeed(stats.network.uploadSpeed)
 
         // Calculate total width
         var totalWidth: CGFloat = leftPadding + rightPadding
@@ -143,51 +179,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let trailingSpacing: CGFloat = index < configs.count - 1 ? spacing : 0
             switch config.type {
             case .cpu, .memory, .disk, .gpu:
-                if config.style == .iconWithText {
-                    // Calculate percentage text for dynamic width
-                    let percentage: Double
+                let (itemLabel, itemPercentage): (String, Double) = {
                     switch config.type {
-                    case .cpu: percentage = stats.cpu.totalUsage
-                    case .memory: percentage = stats.memory.usagePercentage
-                    case .disk: percentage = stats.disk.usagePercentage
-                    case .gpu: percentage = stats.gpu?.usage ?? 0
-                    default: percentage = 0
+                    case .cpu: return ("CPU", stats.cpu.totalUsage)
+                    case .memory: return ("MEM", stats.memory.usagePercentage)
+                    case .disk: return ("DSK", stats.disk.usagePercentage)
+                    case .gpu: return ("GPU", stats.gpu?.usage ?? 0)
+                    default: return ("", 0)
                     }
-                    let text = "\(Int(percentage))%"
-                    totalWidth += calculateIconWithTextWidth(text: text) + trailingSpacing
+                }()
+                let valueText = "\(Int(itemPercentage))%"
+
+                if config.style == .iconWithText {
+                    totalWidth += calculateIconWithTextWidth(text: valueText) + trailingSpacing
                 } else if config.style == .percentage {
-                    totalWidth += 36 + trailingSpacing
+                    totalWidth += measurePercentageWidth(label: itemLabel, value: valueText) + trailingSpacing
                 } else {
                     totalWidth += barWidth + trailingSpacing
                 }
             case .network:
                 if config.style == .iconWithText {
-                    // Calculate speed text for dynamic width
-                    let uploadSpeed = stats.network.uploadSpeed
-                    let downloadSpeed = stats.network.downloadSpeed
-                    var speedText = ""
-                    if uploadSpeed > 0 || downloadSpeed > 0 {
-                        if uploadSpeed > 1024 && downloadSpeed > 1024 {
-                            speedText = String(format: "%.1f↑ %.1f↓", uploadSpeed / 1024, downloadSpeed / 1024)
-                        } else if uploadSpeed > 1024 {
-                            speedText = String(format: "%.1f↑", uploadSpeed / 1024)
-                        } else if downloadSpeed > 1024 {
-                            speedText = String(format: "%.1f↓", downloadSpeed / 1024)
-                        } else {
-                            speedText = formatSpeed(uploadSpeed + downloadSpeed)
-                        }
-                    } else {
-                        speedText = "0K"
-                    }
-                    totalWidth += calculateIconWithTextWidth(text: speedText) + trailingSpacing
+                    totalWidth += calculateIconWithTextWidth(text: networkSpeedText) + trailingSpacing
                 } else if config.style == .indicator {
-                    totalWidth += 14 + trailingSpacing
+                    totalWidth += indicatorWidth + trailingSpacing
                 } else {
-                    totalWidth += 70 + trailingSpacing
+                    totalWidth += speedStyleWidth + trailingSpacing
                 }
             case .battery:
                 if config.style == .iconWithText {
-                    // Calculate battery text for dynamic width
                     var batteryText = "--%"
                     if let battery = stats.battery {
                         var statusSuffix = ""
@@ -198,24 +217,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     totalWidth += calculateIconWithTextWidth(text: batteryText) + trailingSpacing
                 } else if config.style == .percentage {
-                    totalWidth += 36 + trailingSpacing
+                    let batteryLevel = stats.battery?.level ?? 0
+                    totalWidth += measurePercentageWidth(label: "BATT", value: "\(batteryLevel)%") + trailingSpacing
                 } else {
                     totalWidth += barWidth + trailingSpacing
                 }
             case .temperature:
+                let cpuTemp = stats.temperature?.cpu ?? 0
+                let tempText = cpuTemp > 0 ? "\(Int(cpuTemp))°" : "--°"
                 if config.style == .iconWithText {
-                    // Calculate temp text for dynamic width
-                    let cpuTemp = stats.temperature?.cpu ?? 0
-                    let tempText = cpuTemp > 0 ? "\(Int(cpuTemp))°" : "--°"
                     totalWidth += calculateIconWithTextWidth(text: tempText) + trailingSpacing
                 } else {
-                    totalWidth += 36 + trailingSpacing
+                    totalWidth += measurePercentageWidth(label: "TEMP", value: tempText) + trailingSpacing
                 }
             }
         }
 
-        // Debug: print calculated width
+        #if DEBUG
         print("🔧 MenuBar calculated width: \(totalWidth)px")
+        #endif
 
         let imageSize = NSSize(width: totalWidth, height: itemHeight)
         let image = NSImage(size: imageSize)
@@ -260,6 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                     xOffset += actualWidth + trailingSpacing
                 } else if config.style == .percentage {
+                    let pctWidth = measurePercentageWidth(label: itemLabel, value: "\(Int(itemPercentage))%")
                     drawPercentageText(
                         at: xOffset,
                         label: itemLabel,
@@ -269,7 +290,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         valueFont: valueFont,
                         height: itemHeight
                     )
-                    xOffset += 36 + trailingSpacing
+                    xOffset += pctWidth + trailingSpacing
                 } else {
                     drawLabeledBar(
                         at: xOffset,
@@ -286,122 +307,80 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             case .network:
                 if config.style == .iconWithText {
-                    let uploadSpeed = stats.network.uploadSpeed
-                    let downloadSpeed = stats.network.downloadSpeed
-
-                    var speedText = ""
-                    if uploadSpeed > 0 || downloadSpeed > 0 {
-                        if uploadSpeed > 1024 && downloadSpeed > 1024 {
-                            speedText = String(format: "%.1f↑ %.1f↓", uploadSpeed / 1024, downloadSpeed / 1024)
-                        } else if uploadSpeed > 1024 {
-                            speedText = String(format: "%.1f↑", uploadSpeed / 1024)
-                        } else if downloadSpeed > 1024 {
-                            speedText = String(format: "%.1f↓", downloadSpeed / 1024)
-                        } else {
-                            speedText = formatSpeed(uploadSpeed + downloadSpeed)
-                        }
-                    } else {
-                        speedText = "0K"
-                    }
-
                     let actualWidth = drawIconWithText(
                         at: xOffset,
                         iconName: config.customIcon,
-                        text: speedText,
+                        text: networkSpeedText,
                         color: NSColor.systemGreen,
                         height: itemHeight
                     )
                     xOffset += actualWidth + trailingSpacing
                 } else if config.style == .indicator {
-                    // Show two stacked dots: green (download) on top, red (upload) below
-                    // No blinking - solid colors when active
                     let dotSize: CGFloat = 7
                     let dotSpacing: CGFloat = 2
+                    let dotX = xOffset + (indicatorWidth - dotSize) / 2
 
-                    // Calculate positions for two stacked dots
                     let totalDotsHeight = (dotSize * 2) + dotSpacing
                     let startY = (itemHeight - totalDotsHeight) / 2
 
-                    // Check if there's traffic
                     let downloadActive = stats.network.downloadSpeed > 0
                     let uploadActive = stats.network.uploadSpeed > 0
 
                     // Download dot (green) - top
-                    let downloadDotRect = NSRect(x: xOffset + 3, y: startY, width: dotSize, height: dotSize)
                     let downloadColor = downloadActive ? NSColor.systemGreen : NSColor.darkGray
                     downloadColor.setFill()
-                    NSBezierPath(ovalIn: downloadDotRect).fill()
+                    NSBezierPath(ovalIn: NSRect(x: dotX, y: startY, width: dotSize, height: dotSize)).fill()
 
                     // Upload dot (red) - bottom
-                    let uploadDotRect = NSRect(x: xOffset + 3, y: startY + dotSize + dotSpacing, width: dotSize, height: dotSize)
                     let uploadColor = uploadActive ? NSColor.systemRed : NSColor.darkGray
                     uploadColor.setFill()
-                    NSBezierPath(ovalIn: uploadDotRect).fill()
+                    NSBezierPath(ovalIn: NSRect(x: dotX, y: startY + dotSize + dotSpacing, width: dotSize, height: dotSize)).fill()
 
-                    xOffset += 14 + trailingSpacing
+                    xOffset += indicatorWidth + trailingSpacing
                 } else {
-                    // Speed style: show download (green) and upload (red) speeds stacked vertically
-                    // Add two small dots on the LEFT side, text RIGHT-aligned
-                    let downloadSpeed = stats.network.downloadSpeed
-                    let uploadSpeed = stats.network.uploadSpeed
+                    // Speed style: dots on left, text right-aligned
+                    let downloadActive = stats.network.downloadSpeed > 0
+                    let uploadActive = stats.network.uploadSpeed > 0
 
-                    let downloadText = formatSpeed(downloadSpeed)
-                    let uploadText = formatSpeed(uploadSpeed)
-
-                    // Check if there's traffic (no blinking)
-                    let downloadActive = downloadSpeed > 0
-                    let uploadActive = uploadSpeed > 0
-
-                    // Draw dots first (on the left)
                     let dotSize: CGFloat = 4
-                    let dotOffset: CGFloat = 7  // Space for dots + padding
-                    let textAreaWidth: CGFloat = 63  // Remaining width for text (70 - 7)
+                    let dotOffset: CGFloat = 7
 
-                    // Calculate text positions
                     let downloadY = itemHeight - 11
-                    let uploadY: CGFloat = 2
+                    let uploadY: CGFloat = 1
+                    let visualCenterOffset: CGFloat = 3
 
-                    // For dot positioning: text Y is baseline, we need to center dot with text visual center
-                    let visualCenterOffset: CGFloat = 3  // Offset to center dot with text visually
-
-                    // Download dot (green) - centered with download text
-                    let downloadDotY = downloadY + visualCenterOffset
+                    // Download dot (green)
                     let downloadDotColor = downloadActive ? NSColor.systemGreen : NSColor.darkGray
                     downloadDotColor.setFill()
-                    NSBezierPath(ovalIn: NSRect(x: xOffset + 1, y: downloadDotY, width: dotSize, height: dotSize)).fill()
+                    NSBezierPath(ovalIn: NSRect(x: xOffset + 1, y: downloadY + visualCenterOffset, width: dotSize, height: dotSize)).fill()
 
-                    // Upload dot (red) - centered with upload text
-                    let uploadDotY = uploadY + visualCenterOffset
+                    // Upload dot (red)
                     let uploadDotColor = uploadActive ? NSColor.systemRed : NSColor.darkGray
                     uploadDotColor.setFill()
-                    NSBezierPath(ovalIn: NSRect(x: xOffset + 1, y: uploadDotY, width: dotSize, height: dotSize)).fill()
-
-                    // Prepare font and attributes for text measurement
-                    let downloadFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-                    let uploadFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+                    NSBezierPath(ovalIn: NSRect(x: xOffset + 1, y: uploadY + visualCenterOffset, width: dotSize, height: dotSize)).fill()
 
                     let downloadAttr: [NSAttributedString.Key: Any] = [
-                        .font: downloadFont,
+                        .font: networkFont,
                         .foregroundColor: NSColor.systemGreen
                     ]
                     let uploadAttr: [NSAttributedString.Key: Any] = [
-                        .font: uploadFont,
+                        .font: networkFont,
                         .foregroundColor: NSColor.systemRed
                     ]
 
-                    // Calculate text widths for right alignment
-                    let downloadTextWidth = (downloadText as NSString).size(withAttributes: downloadAttr).width
-                    let uploadTextWidth = (uploadText as NSString).size(withAttributes: uploadAttr).width
+                    let textAreaWidth = speedStyleWidth - dotOffset
+                    let downloadTextWidth = (networkDownText as NSString).size(withAttributes: downloadAttr).width
+                    let uploadTextWidth = (networkUpText as NSString).size(withAttributes: uploadAttr).width
 
                     // Draw download speed (green) - RIGHT-aligned
                     let downloadX = xOffset + dotOffset + (textAreaWidth - downloadTextWidth)
-                    (downloadText as NSString).draw(at: NSPoint(x: downloadX, y: downloadY), withAttributes: downloadAttr)
+                    (networkDownText as NSString).draw(at: NSPoint(x: downloadX, y: downloadY), withAttributes: downloadAttr)
 
                     // Draw upload speed (red) - RIGHT-aligned
                     let uploadX = xOffset + dotOffset + (textAreaWidth - uploadTextWidth)
-                    (uploadText as NSString).draw(at: NSPoint(x: uploadX, y: uploadY), withAttributes: uploadAttr)
+                    (networkUpText as NSString).draw(at: NSPoint(x: uploadX, y: uploadY), withAttributes: uploadAttr)
 
-                    xOffset += 70 + trailingSpacing
+                    xOffset += speedStyleWidth + trailingSpacing
                 }
 
             case .battery:
@@ -432,7 +411,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         )
                         xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
-                        // BATT label on top, percentage below (like CPU)
+                        let pctWidth = measurePercentageWidth(label: "BATT", value: "\(battery.level)%")
                         drawPercentageText(
                             at: xOffset,
                             label: "BATT",
@@ -442,7 +421,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 36 + trailingSpacing
+                        xOffset += pctWidth + trailingSpacing
                     } else {
                         // Bar style: time estimate label on top, bar below
                         var timeLabel = ""
@@ -487,6 +466,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         )
                         xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
+                        let pctWidth = measurePercentageWidth(label: "BATT", value: "0%")
                         drawPercentageText(
                             at: xOffset,
                             label: "BATT",
@@ -496,7 +476,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 36 + trailingSpacing
+                        xOffset += pctWidth + trailingSpacing
                     } else {
                         drawLabeledBar(
                             at: xOffset,
@@ -528,7 +508,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                     xOffset += actualWidth + trailingSpacing
                 } else {
-                    // TEMP label on top, value below (like CPU percentage style)
+                    let tempStr = hasCpuTemp ? "\(Int(cpuTemp))°" : "--°"
+                    let tempWidth = measurePercentageWidth(label: "TEMP", value: tempStr)
+
                     // Draw label at top
                     let labelAttr: [NSAttributedString.Key: Any] = [
                         .font: labelFont,
@@ -538,15 +520,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     ("TEMP" as NSString).draw(at: NSPoint(x: xOffset, y: labelY), withAttributes: labelAttr)
 
                     // Draw value below
-                    let tempStr = hasCpuTemp ? "\(Int(cpuTemp))°" : "--°"
                     let valueAttr: [NSAttributedString.Key: Any] = [
                         .font: valueFont,
                         .foregroundColor: tempColor
                     ]
-                    let valueY: CGFloat = 2
+                    let valueY: CGFloat = 1
                     (tempStr as NSString).draw(at: NSPoint(x: xOffset, y: valueY), withAttributes: valueAttr)
 
-                    xOffset += 36 + trailingSpacing
+                    xOffset += tempWidth + trailingSpacing
                 }
 
             case .gpu:
@@ -561,6 +542,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         )
                         xOffset += actualWidth + trailingSpacing
                     } else if config.style == .percentage {
+                        let pctWidth = measurePercentageWidth(label: "GPU", value: "\(Int(gpu.usage))%")
                         drawPercentageText(
                             at: xOffset,
                             label: "GPU",
@@ -570,7 +552,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             valueFont: valueFont,
                             height: itemHeight
                         )
-                        xOffset += 36 + trailingSpacing
+                        xOffset += pctWidth + trailingSpacing
                     } else {
                         drawLabeledBar(
                             at: xOffset,
@@ -585,8 +567,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         xOffset += barWidth + trailingSpacing
                     }
                 } else {
-                    // GPU not available - show placeholder with 2-row layout (compact)
-                    // Label at top
+                    // GPU not available - show placeholder
+                    let placeholderWidth = measurePercentageWidth(label: "GPU", value: "--%")
                     let labelAttr: [NSAttributedString.Key: Any] = [
                         .font: labelFont,
                         .foregroundColor: NSColor.secondaryLabelColor
@@ -594,14 +576,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let labelY = itemHeight - 11
                     ("GPU" as NSString).draw(at: NSPoint(x: xOffset, y: labelY), withAttributes: labelAttr)
 
-                    // Value at bottom
                     let attr: [NSAttributedString.Key: Any] = [
                         .font: valueFont,
                         .foregroundColor: NSColor.secondaryLabelColor
                     ]
-                    let valueY: CGFloat = 2
+                    let valueY: CGFloat = 1
                     ("--%" as NSString).draw(at: NSPoint(x: xOffset, y: valueY), withAttributes: attr)
-                    xOffset += 36 + trailingSpacing
+                    xOffset += placeholderWidth + trailingSpacing
                 }
             }
         }
@@ -612,6 +593,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Drawing Helpers
+
+    // Measure width for percentage/text style (label on top, value on bottom)
+    private func measurePercentageWidth(label: String, value: String) -> CGFloat {
+        let labelWidth = (label as NSString).size(withAttributes: [.font: labelFont]).width
+        let valueWidth = (value as NSString).size(withAttributes: [.font: valueFont]).width
+        return ceil(max(labelWidth, valueWidth))
+    }
+
+    // Measure width for network speed style (dots + two stacked speed texts)
+    private func measureSpeedStyleWidth(downloadText: String, uploadText: String) -> CGFloat {
+        let dotOffset: CGFloat = 7
+        let attr: [NSAttributedString.Key: Any] = [.font: networkFont]
+        let downloadWidth = (downloadText as NSString).size(withAttributes: attr).width
+        let uploadWidth = (uploadText as NSString).size(withAttributes: attr).width
+        return dotOffset + ceil(max(downloadWidth, uploadWidth))
+    }
 
     // Calculate width for iconWithText style without drawing
     private func calculateIconWithTextWidth(text: String) -> CGFloat {
@@ -665,7 +662,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .font: valueFont,
             .foregroundColor: color
         ]
-        let valueY: CGFloat = 2
+        let valueY: CGFloat = 1
         (valueStr as NSString).draw(at: NSPoint(x: x, y: valueY), withAttributes: valueAttr)
     }
 
@@ -689,35 +686,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu bar is ~24px tall, center both elements
         let centerY = height / 2
 
-        // Draw icon on the left - centered vertically
-        // SF Symbols have optical center that's slightly higher than geometric center
-        let iconY = centerY - (iconSize / 2) - 0.5  // -0.5 for optical correction
+        // Draw icon on the left - vertically centered with text
+        let textY = centerY - (textSize.height / 2)
+        let iconY = centerY - (iconSize / 2)
 
-        if let iconImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .medium)
-            if let configuredIcon = iconImage.withSymbolConfiguration(config) {
-                let tintedImage = NSImage(size: NSSize(width: iconSize, height: iconSize))
-                tintedImage.lockFocus()
-                color.set()
-                let rect = NSRect(x: 0, y: 0, width: iconSize, height: iconSize)
-                configuredIcon.draw(in: rect)
-                rect.fill(using: .sourceAtop)
-                tintedImage.unlockFocus()
-
-                tintedImage.draw(in: NSRect(x: x, y: iconY, width: iconSize, height: iconSize),
-                              from: .zero, operation: .sourceOver, fraction: 1.0)
-            }
+        if let tintedImage = cachedIcon(name: iconName, color: color, size: iconSize) {
+            tintedImage.draw(in: NSRect(x: x, y: iconY, width: iconSize, height: iconSize),
+                          from: .zero, operation: .sourceOver, fraction: 1.0)
         }
-
-        // Draw text on the right - use font baseline for proper alignment
-        // Text needs to be positioned from baseline, not bottom
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        let baselineOffset = font.descender  // Distance from baseline to bottom of text
-        let textY = centerY - (textSize.height / 2) + baselineOffset + 1  // +1 for visual centering
 
         textStr.draw(at: NSPoint(x: x + iconSize + iconTextSpacing, y: textY), withAttributes: attr)
 
         return totalWidth
+    }
+
+    // MARK: - Icon Cache
+
+    private func cachedIcon(name: String, color: NSColor, size: CGFloat) -> NSImage? {
+        let colorHash = color.hash
+        if let cached = iconCache[name]?[colorHash] {
+            return cached
+        }
+
+        guard let iconImage = NSImage(systemSymbolName: name, accessibilityDescription: nil) else {
+            return nil
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: size, weight: .medium)
+        guard let configuredIcon = iconImage.withSymbolConfiguration(config) else {
+            return nil
+        }
+
+        let tintedImage = NSImage(size: NSSize(width: size, height: size))
+        tintedImage.lockFocus()
+        color.set()
+        let rect = NSRect(x: 0, y: 0, width: size, height: size)
+        configuredIcon.draw(in: rect)
+        rect.fill(using: .sourceAtop)
+        tintedImage.unlockFocus()
+
+        iconCache[name, default: [:]][colorHash] = tintedImage
+        return tintedImage
     }
 
     // MARK: - Color Helpers

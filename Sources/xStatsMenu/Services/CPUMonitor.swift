@@ -12,7 +12,6 @@ class CPUMonitor {
     private var prevTotalIdle: Double = 0
     
     // Cached values
-    private let tempMonitor = TemperatureMonitor()
     private lazy var cpuFrequency: Int64 = {
         var frequency: Int64 = 0
         var size = MemoryLayout<Int64>.size
@@ -151,12 +150,6 @@ class CPUMonitor {
         prevNumCpuInfo = numCpuInfo
         prevCPUInfo = cpuInfo
 
-        // Get CPU temperature from cached monitor
-        var temperature: Double?
-        if let temps = tempMonitor.getStats() {
-            temperature = temps.cpu
-        }
-
         return CPUStats(
             totalUsage: totalUsage,
             perCoreUsage: perCoreUsage,
@@ -165,7 +158,7 @@ class CPUMonitor {
             systemUsage: systemUsage,
             efficiencyCoreUsage: efficiencyCoreUsage,
             performanceCoreUsage: performanceCoreUsage,
-            temperature: temperature
+            temperature: nil
         )
     }
 }

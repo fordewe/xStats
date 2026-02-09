@@ -3,21 +3,16 @@ import Metal
 import IOKit
 
 class GPUMonitor {
-    private let tempMonitor = TemperatureMonitor()
     private var fallbackDevice: MTLDevice? = MTLCreateSystemDefaultDevice()
 
     func getStats() -> GPUStats? {
         // Primary source: IOAccelerator PerformanceStatistics (real GPU utilization on macOS).
         if let ioStats = getIOAcceleratorStats() {
-            return withTemperature(ioStats)
+            return ioStats
         }
 
         // Fallback: Metal memory stats only (usage unavailable -> 0).
-        if let metalStats = getMetalFallbackStats() {
-            return withTemperature(metalStats)
-        }
-
-        return nil
+        return getMetalFallbackStats()
     }
 
     private func getIOAcceleratorStats() -> GPUStats? {
@@ -108,14 +103,6 @@ class GPUMonitor {
             memoryTotal: memoryTotal,
             frequency: nil
         )
-    }
-
-    private func withTemperature(_ stats: GPUStats) -> GPUStats {
-        var enriched = stats
-        if let temps = tempMonitor.getStats() {
-            enriched.temperature = temps.gpu
-        }
-        return enriched
     }
 
     private func firstDouble(in dictionary: [String: Any], keys: [String]) -> Double? {

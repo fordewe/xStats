@@ -7,6 +7,9 @@ class DiskMonitor {
     private var prevWriteBytes: UInt64 = 0
     private var prevTimestamp: CFAbsoluteTime = 0
 
+    // Cache which I/O discovery method works (0-3, nil = not yet determined)
+    private var cachedIOMethod: Int?
+
     // Cache static disk properties
     private lazy var totalDiskSize: UInt64 = {
         var stats = statfs()
@@ -69,27 +72,31 @@ class DiskMonitor {
     }
 
     private func getIOStats(readBytes: inout UInt64, writeBytes: inout UInt64) {
-        // Try multiple IOKit classes for disk I/O statistics
-        // Modern macOS uses different class names
-        
-        // Method 1: Try IOBlockStorageDriver (traditional)
-        if tryGetIOStatsFromClass("IOBlockStorageDriver", readBytes: &readBytes, writeBytes: &writeBytes) {
-            return
+        // Use cached method if available
+        if let method = cachedIOMethod {
+            if tryIOMethod(method, readBytes: &readBytes, writeBytes: &writeBytes) {
+                return
+            }
+            // Cached method failed, reset and do full scan
+            cachedIOMethod = nil
         }
-        
-        // Method 2: Try IOMedia with leaf nodes
-        if tryGetIOStatsFromClass("IOMedia", readBytes: &readBytes, writeBytes: &writeBytes) {
-            return
+
+        // Try all methods and cache the one that works
+        for method in 0..<4 {
+            if tryIOMethod(method, readBytes: &readBytes, writeBytes: &writeBytes) {
+                cachedIOMethod = method
+                return
+            }
         }
-        
-        // Method 3: Try AppleAPFSMedia for APFS volumes (Apple Silicon)
-        if tryGetIOStatsFromClass("AppleAPFSMedia", readBytes: &readBytes, writeBytes: &writeBytes) {
-            return
-        }
-        
-        // Method 4: Try IONVMeController for NVMe drives
-        if tryGetIOStatsFromNVMe(readBytes: &readBytes, writeBytes: &writeBytes) {
-            return
+    }
+
+    private func tryIOMethod(_ method: Int, readBytes: inout UInt64, writeBytes: inout UInt64) -> Bool {
+        switch method {
+        case 0: return tryGetIOStatsFromClass("IOBlockStorageDriver", readBytes: &readBytes, writeBytes: &writeBytes)
+        case 1: return tryGetIOStatsFromClass("IOMedia", readBytes: &readBytes, writeBytes: &writeBytes)
+        case 2: return tryGetIOStatsFromClass("AppleAPFSMedia", readBytes: &readBytes, writeBytes: &writeBytes)
+        case 3: return tryGetIOStatsFromNVMe(readBytes: &readBytes, writeBytes: &writeBytes)
+        default: return false
         }
     }
     

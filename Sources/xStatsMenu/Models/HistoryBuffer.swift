@@ -21,11 +21,16 @@ class HistoryBuffer<T> {
     }
 
     func getValues() -> [T] {
-        // Return values in chronological order
+        var result = [T]()
+        result.reserveCapacity(capacity)
         if !isFull {
-            return Array(buffer[0..<index]) + Array(repeating: defaultValue, count: capacity - index)
+            result.append(contentsOf: buffer[0..<index])
+            result.append(contentsOf: repeatElement(defaultValue, count: capacity - index))
+        } else {
+            result.append(contentsOf: buffer[index..<capacity])
+            result.append(contentsOf: buffer[0..<index])
         }
-        return Array(buffer[index..<capacity]) + Array(buffer[0..<index])
+        return result
     }
 
     func clear() {

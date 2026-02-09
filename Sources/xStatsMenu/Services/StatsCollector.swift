@@ -43,12 +43,6 @@ class StatsCollector: ObservableObject {
         return buffer
     }
 
-    private func updateHistory(_ key: String, value: Double) {
-        historyQueue.async { [weak self] in
-            self?.getHistoryBuffer(for: key).add(value)
-        }
-    }
-
     private var isRunning = false
     var onUpdate: ((SystemStats) -> Void)?
 
@@ -82,28 +76,40 @@ class StatsCollector: ObservableObject {
 
         // Always collect all stats for popover (popover shows all panels)
         // Note: Temperature/Fan always collected to avoid 0-values on first popover open
+        var cpuStats = cpuMonitor.getStats()
+        var gpuStats = gpuMonitor.getStats()
+        let tempStats = temperatureMonitor.getStats()
+
+        // Inject temperature from single TemperatureMonitor read (avoids 3x redundant SMC calls)
+        if let temps = tempStats {
+            cpuStats.temperature = temps.cpu
+            gpuStats?.temperature = temps.gpu
+        }
+
         let stats = SystemStats(
-            cpu: cpuMonitor.getStats(),
+            cpu: cpuStats,
             memory: memoryMonitor.getStats(),
             disk: diskMonitor.getStats(),
             network: networkMonitor.getStats(),
-            gpu: gpuMonitor.getStats(),
+            gpu: gpuStats,
             battery: batteryMonitor.getStats(),
-            temperature: temperatureMonitor.getStats(),
+            temperature: tempStats,
             fan: fanMonitor.getStats()
         )
 
-        // Always update history buffers for metrics with graphs (needed by popover)
-        // Only skip history for metrics without graphs (temperature, fan, battery)
-        updateHistory("cpu", value: stats.cpu.totalUsage)
-        updateHistory("memory", value: stats.memory.usagePercentage)
-        updateHistory("disk_read", value: stats.disk.readSpeed)
-        updateHistory("disk_write", value: stats.disk.writeSpeed)
-        updateHistory("network_up", value: stats.network.uploadSpeed)
-        updateHistory("network_down", value: stats.network.downloadSpeed)
-
-        if let gpu = stats.gpu {
-            updateHistory("gpu", value: gpu.usage)
+        // Batch all history buffer updates in a single dispatch
+        let gpuUsage = stats.gpu?.usage
+        historyQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.getHistoryBuffer(for: "cpu").add(stats.cpu.totalUsage)
+            self.getHistoryBuffer(for: "memory").add(stats.memory.usagePercentage)
+            self.getHistoryBuffer(for: "disk_read").add(stats.disk.readSpeed)
+            self.getHistoryBuffer(for: "disk_write").add(stats.disk.writeSpeed)
+            self.getHistoryBuffer(for: "network_up").add(stats.network.uploadSpeed)
+            self.getHistoryBuffer(for: "network_down").add(stats.network.downloadSpeed)
+            if let gpuUsage = gpuUsage {
+                self.getHistoryBuffer(for: "gpu").add(gpuUsage)
+            }
         }
 
         // Debug: Log temperature when available (only once when first found)
@@ -132,33 +138,33 @@ class StatsCollector: ObservableObject {
         }
     }
 
-    // History getters
+    // History getters (synchronized with historyQueue for thread safety)
     func getCpuHistory() -> [Double] {
-        getHistoryBuffer(for: "cpu").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "cpu").getValues() }
     }
 
     func getMemoryHistory() -> [Double] {
-        getHistoryBuffer(for: "memory").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "memory").getValues() }
     }
 
     func getNetworkUpHistory() -> [Double] {
-        getHistoryBuffer(for: "network_up").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "network_up").getValues() }
     }
 
     func getNetworkDownHistory() -> [Double] {
-        getHistoryBuffer(for: "network_down").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "network_down").getValues() }
     }
 
     func getDiskReadHistory() -> [Double] {
-        getHistoryBuffer(for: "disk_read").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "disk_read").getValues() }
     }
 
     func getDiskWriteHistory() -> [Double] {
-        getHistoryBuffer(for: "disk_write").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "disk_write").getValues() }
     }
 
     func getGpuHistory() -> [Double] {
-        getHistoryBuffer(for: "gpu").getValues()
+        historyQueue.sync { getHistoryBuffer(for: "gpu").getValues() }
     }
 
     func getCurrentStats() -> SystemStats {
