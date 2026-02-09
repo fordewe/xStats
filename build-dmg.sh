@@ -49,6 +49,10 @@ cp -R "Sources/xStatsMenu/Resources/Assets.xcassets" "$APP_BUNDLE/Contents/Resou
 # Set executable permissions
 chmod +x "$APP_BUNDLE/Contents/MacOS/xStats"
 
+# Ad-hoc code sign to prevent "damaged" Gatekeeper warning
+echo "🔏 Code signing app bundle..."
+codesign --force --deep -s - "$APP_BUNDLE"
+
 echo "✅ App bundle created at: $APP_BUNDLE"
 
 # Verify icon is in place
