@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
@@ -31,6 +32,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup popover
         setupPopover()
+
+        // Sync launch at login state with system
+        syncLaunchAtLoginState()
 
         // Set up callback for UI updates
         statsCollector.onUpdate = { [weak self] stats in
@@ -179,6 +183,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statsCollector.stopMonitoring()
         blinkTimer?.invalidate()
         networkBlinkTimer?.invalidate()
+    }
+
+    // MARK: - Launch at Login
+
+    private func syncLaunchAtLoginState() {
+        let currentState = SMAppService.mainApp.status
+        let shouldBeEnabled = UserDefaults.standard.bool(forKey: "launchAtLogin")
+
+        if currentState == .enabled && !shouldBeEnabled {
+            try? SMAppService.mainApp.unregister()
+        } else if currentState == .notRegistered && shouldBeEnabled {
+            try? SMAppService.mainApp.register()
+        }
     }
 
     // MARK: - Menu Bar Image Creation

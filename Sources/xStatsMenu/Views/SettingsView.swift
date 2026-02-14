@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 struct SettingsView: View {
     @StateObject private var settings = MenuBarSettings.shared
@@ -295,7 +296,7 @@ struct GeneralSettingsTab: View {
     @AppStorage("refreshInterval") private var refreshInterval: Double = 2.0
     @AppStorage("showOnAllSpaces") private var showOnAllSpaces: Bool = true
     @AppStorage("launchAtLogin") private var launchAtLogin: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             // Refresh interval
@@ -303,7 +304,7 @@ struct GeneralSettingsTab: View {
                 Text("Update Interval")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(Theme.textPrimary)
-                
+
                 HStack {
                     Slider(value: $refreshInterval, in: 1...10, step: 0.5)
                         .frame(width: 200)
@@ -313,24 +314,44 @@ struct GeneralSettingsTab: View {
                         .frame(width: 40)
                 }
             }
-            
+
             Divider()
                 .background(Theme.textSecondary.opacity(0.2))
-            
+
             // Toggles
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Show on all Spaces/Desktops", isOn: $showOnAllSpaces)
                     .toggleStyle(.checkbox)
-                
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .toggleStyle(.checkbox)
+
+                Toggle("Launch at Login", isOn: Binding(
+                    get: { launchAtLogin },
+                    set: { newValue in
+                        launchAtLogin = newValue
+                        setLaunchAtLogin(newValue)
+                    }
+                ))
+                .toggleStyle(.checkbox)
             }
             .font(.system(size: 13))
             .foregroundColor(Theme.textPrimary)
-            
+
             Spacer()
         }
         .padding(20)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("Failed to \(enabled ? "enable" : "disable") launch at login: \(error)")
+            // Revert the setting on failure
+            launchAtLogin = !enabled
+        }
     }
 }
 
